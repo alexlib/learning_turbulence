@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 # Bases and domain
-x_basis = de.Fourier('x', param.Nx, interval=(0, param.Lx), dealias=3/2)
-y_basis = de.Fourier('y', param.Ny, interval=(0, param.Ly), dealias=3/2)
-z_basis = de.Fourier('z', param.Nz, interval=(0, param.Lz), dealias=3/2)
+x_basis = de.Fourier('x', param.Nx, interval=param.Bx, dealias=3/2)
+y_basis = de.Fourier('y', param.Ny, interval=param.By, dealias=3/2)
+z_basis = de.Fourier('z', param.Nz, interval=param.Bz, dealias=3/2)
 domain = de.Domain([x_basis, y_basis, z_basis], grid_dtype=np.float64)
 
 # Problem
@@ -23,10 +23,11 @@ problem.parameters['ν'] = param.ν
 problem.parameters['Fx'] = param.Fx
 problem.parameters['Fy'] = param.Fy
 problem.parameters['Fz'] = param.Fz
-problem.substitutions['ke'] = "(ux*ux + uy*uy + uz*uz) / 2"
 problem.substitutions['ωx'] = "dy(uz) - dz(uy)"
 problem.substitutions['ωy'] = "dz(ux) - dx(uz)"
 problem.substitutions['ωz'] = "dx(uy) - dy(ux)"
+problem.substitutions['ke'] = "(ux*ux + uy*uy + uz*uz) / 2"
+problem.substitutions['en'] = "(ωx*ωx + ωy*ωy + ωz*ωz) / 2"
 problem.substitutions['L(a)'] = "dx(dx(a)) + dy(dy(a)) + dz(dz(a))"
 problem.substitutions['A(a)'] = "ux*dx(a) + uy*dy(a) + uz*dz(a)"
 problem.add_equation("dt(ux) - ν*L(ux) + dx(p) = -A(ux) + Fx")
@@ -40,12 +41,6 @@ solver = problem.build_solver(de.timesteppers.RK443)
 logger.info('Solver built')
 
 # Initial conditions
-# Random perturbations, initialized globally for same results in parallel
-gshape = domain.dist.grid_layout.global_shape(scales=1)
-slices = domain.dist.grid_layout.slices(scales=1)
-rand = np.random.RandomState(seed=42)
-noise = rand.standard_normal(gshape)[slices]
-
 x, y, z = domain.grids(1)
 ux = solver.state['ux']
 uy = solver.state['uy']
@@ -60,12 +55,21 @@ solver.stop_wall_time = param.stop_wall_time
 solver.stop_iteration = param.stop_iteration
 
 # Analysis
-snapshots = solver.evaluator.add_file_handler('snapshots', iter=param.snapshot_iter, max_writes=1)
+snapshots = solver.evaluator.add_file_handler('snapshots', iter=param.snapshots_iter, max_writes=1, mode='overwrite')
 snapshots.add_system(solver.state)
-snapshots.add_task("ke")
 snapshots.add_task("ωx")
 snapshots.add_task("ωy")
 snapshots.add_task("ωz")
+snapshots.add_task("ke")
+snapshots.add_task("en")
+
+slices = solver.evaluator.add_file_handler('slices', iter=param.slices_iter, max_writes=10, mode='overwrite')
+slices.add_task("interp(ke, x='left')", name="ke_x_left")
+slices.add_task("interp(en, x='left')", name="en_x_left")
+
+scalars = solver.evaluator.add_file_handler('scalars', iter=param.scalars_iter, max_writes=100, mode='overwrite')
+scalars.add_task("integ(ke)", name='KE')
+scalars.add_task("integ(en)", name='EN')
 
 # Flow properties
 flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
