@@ -2,6 +2,7 @@
 import numpy as np
 from mpi4py import MPI
 import time
+import pathlib
 
 from dedalus import public as de
 from dedalus.extras import flow_tools
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 x_basis = de.Fourier('x', param.Nx, interval=param.Bx, dealias=3/2)
 y_basis = de.Fourier('y', param.Ny, interval=param.By, dealias=3/2)
 z_basis = de.Fourier('z', param.Nz, interval=param.Bz, dealias=3/2)
-domain = de.Domain([x_basis, y_basis, z_basis], grid_dtype=np.float64)
+domain = de.Domain([x_basis, y_basis, z_basis], grid_dtype=np.float64, mesh=param.mesh)
 
 # Problem
 problem = de.IVP(domain, variables=['p','ux','uy','uz'])
@@ -45,9 +46,12 @@ x, y, z = domain.grids(1)
 ux = solver.state['ux']
 uy = solver.state['uy']
 uz = solver.state['uz']
-ux['g'] = param.ux(x, y, z)
-uy['g'] = param.uy(x, y, z)
-uz['g'] = param.uz(x, y, z)
+if pathlib.Path('restart.h5').exists():
+    solver.load_state('restart.h5', -1)
+else:
+    ux['g'] = param.ux(x, y, z)
+    uy['g'] = param.uy(x, y, z)
+    uz['g'] = param.uz(x, y, z)
 
 # Integration parameters
 solver.stop_sim_time = param.stop_sim_time
