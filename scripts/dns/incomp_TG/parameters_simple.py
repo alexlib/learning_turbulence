@@ -7,6 +7,7 @@ L = 1
 N = 16
 Bx = By = Bz = (-np.pi*L, np.pi*L)
 Nx = Ny = Nz = N
+mesh = None
 
 # Physical parameters
 Re = 16  # V * L / ν
