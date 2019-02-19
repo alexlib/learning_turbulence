@@ -61,15 +61,6 @@ solver.stop_iteration = param.stop_iteration
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', iter=param.snapshots_iter, max_writes=1, mode='overwrite')
 snapshots.add_system(solver.state)
-snapshots.add_task("ωx")
-snapshots.add_task("ωy")
-snapshots.add_task("ωz")
-snapshots.add_task("ke")
-snapshots.add_task("en")
-
-slices = solver.evaluator.add_file_handler('slices', iter=param.slices_iter, max_writes=10, mode='overwrite')
-slices.add_task("interp(ke, x='left')", name="ke_x_left")
-slices.add_task("interp(en, x='left')", name="en_x_left")
 
 scalars = solver.evaluator.add_file_handler('scalars', iter=param.scalars_iter, max_writes=100, mode='overwrite')
 scalars.add_task("integ(ke)", name='KE')
