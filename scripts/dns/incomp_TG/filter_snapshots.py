@@ -15,6 +15,7 @@ import h5py
 import post as post_tools
 import filter
 import xarray
+import numpy as np
 import parameters as params
 
 
@@ -52,26 +53,32 @@ def save_subgrid_fields(filename, N, comm, output_path):
     out['ux'] = filt_ux = filt(ux).evaluate()
     out['uy'] = filt_uy = filt(uy).evaluate()
     out['uz'] = filt_uz = filt(uz).evaluate()
-    # Compute subgrid stress components
-    out['txx'] = filt(filt_ux*filt_ux - ux*ux).evaluate()
-    out['tyy'] = filt(filt_uy*filt_uy - uy*uy).evaluate()
-    out['tzz'] = filt(filt_uz*filt_uz - uz*uz).evaluate()
-    out['txy'] = filt(filt_ux*filt_uy - ux*uy).evaluate()
-    out['tyz'] = filt(filt_uy*filt_uz - uy*uz).evaluate()
-    out['tzx'] = filt(filt_uz*filt_ux - uz*ux).evaluate()
     # Compute resolved strain components
     dx = domain.bases[0].Differentiate
     dy = domain.bases[1].Differentiate
     dz = domain.bases[2].Differentiate
-    out['Sxx'] = dx(filt_ux).evaluate()
-    out['Syy'] = dy(filt_uy).evaluate()
-    out['Szz'] = dz(filt_uz).evaluate()
-    out['Sxy'] = (0.5*(dx(filt_uy) + dy(filt_ux))).evaluate()
-    out['Syz'] = (0.5*(dy(filt_uz) + dz(filt_uy))).evaluate()
-    out['Szx'] = (0.5*(dz(filt_ux) + dx(filt_uz))).evaluate()
+    out['Sxx'] = Sxx = dx(filt_ux).evaluate()
+    out['Syy'] = Syy = dy(filt_uy).evaluate()
+    out['Szz'] = Szz = dz(filt_uz).evaluate()
+    out['Sxy'] = Sxy = Syx = (0.5*(dx(filt_uy) + dy(filt_ux))).evaluate()
+    out['Syz'] = Syz = Szy = (0.5*(dy(filt_uz) + dz(filt_uy))).evaluate()
+    out['Szx'] = Szx = Sxz = (0.5*(dz(filt_ux) + dx(filt_uz))).evaluate()
+    out['S_norm'] = np.sqrt(Sxx*Sxx + Sxy*Sxy + Sxz*Sxz + Syx*Syx + Syy*Syy + Syz*Syz + Szx*Szx + Szy*Szy + Szz*Szz).evaluate()
+    # Compute subgrid stress components
+    out['txx'] = txx = filt(filt_ux*filt_ux - ux*ux).evaluate()
+    out['tyy'] = tyy = filt(filt_uy*filt_uy - uy*uy).evaluate()
+    out['tzz'] = tzz = filt(filt_uz*filt_uz - uz*uz).evaluate()
+    out['txy'] = txy = tyx = filt(filt_ux*filt_uy - ux*uy).evaluate()
+    out['tyz'] = tyz = tzy = filt(filt_uy*filt_uz - uy*uz).evaluate()
+    out['tzx'] = tzx = txz = filt(filt_uz*filt_ux - uz*ux).evaluate()
+    # Compute subgrid force components
+    out['fx'] = (dx(txx) + dy(tyx) + dz(tzx)).evaluate()
+    out['fy'] = (dx(txy) + dy(tyy) + dz(tzy)).evaluate()
+    out['fz'] = (dx(txz) + dy(tyz) + dz(tzz)).evaluate()
     # Save all outputs
     for key in out:
         field = out[key]
+        field.require_coeff_space()
         field.set_scales(N / params.N)
         out[key] = field_to_xarray(field, layout='g')
     ds = xarray.Dataset(out)
