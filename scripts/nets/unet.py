@@ -9,9 +9,9 @@ class Unet(tf.keras.Model):
     def __init__(self):
         super(Unet, self).__init__()
 
-        self.Lc11 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same') 
-        self.Lc12 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same') 
-        self.Lp13 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', strides=(2, 2), padding='same') 
+        self.Lc11 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
+        self.Lc12 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
+        self.Lp13 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', strides=(2, 2), padding='same')
 
         self.Lc21 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
         self.Lc22 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
@@ -104,11 +104,11 @@ class Unet(tf.keras.Model):
         c10 = self.Lc103 (c10)
 
         outputs = self.Loutputs (c10)
-        
+
         return outputs
 
     def cost_function( self, in_Net , labels):
         alpha = self.call(in_Net)
-        
+
         return tf.reduce_mean( ( alpha - labels)**2 ) , alpha
 

@@ -39,15 +39,15 @@ Net_input = np.zeros((train_batch_size,num_features, num_features,1))
 with tf.device('/gpu:0'):
     for epoch in range(1):
         for train_iter in range(1):
-            
+
             #loads labels and network inputs here and asign to labels and Net_input
-            
+
             tf_labels = tf.cast( labels, datatype)
-            
-            
+
+
             tf_Net_input = tf.cast( Net_input , datatype)
-            
-            
+
+
 
             with tf.GradientTape() as tape:
                 tape.watch(Unet_obj.variables)
@@ -58,12 +58,12 @@ with tf.device('/gpu:0'):
             optimizer.apply_gradients(zip(weight_grads, Unet_obj.variables), global_step=tf.train.get_or_create_global_step())
 
             print( epoch, train_iter , cost_value.numpy() )
-            
+
             if (((train_iter+1)%10)==0):
                 print( "saving weights." )
                 RT.save_weights("checkpoints/model_Unet")
-            
-            
-            
-            
+
+
+
+
 
