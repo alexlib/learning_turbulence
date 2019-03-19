@@ -7,29 +7,59 @@ Issues:
 
 import tensorflow as tf
 
-# def pad_circular_nd(x: torch.Tensor, pad: int, dim) -> torch.Tensor:
-#     """
-#     :param x: shape [H, W]
-#     :param pad: int >= 0
-#     :param dim: the dimension over which the tensors are padded
-#     :return:
-#     """
 
-#     if isinstance(dim, int):
-#         dim = [dim]
+def axslice(axis, start, stop, step=None):
+    """Slice array along a specified axis."""
+    if axis < 0:
+        raise ValueError("`axis` must be positive")
+    slicelist = [slice(None)] * axis
+    slicelist.append(slice(start, stop, step))
+    return tuple(slicelist)
 
-#     for d in dim:
-#         if d >= len(x.shape):
-#             raise IndexError(f"dim {d} out of range")
 
-#         idx = tuple(slice(0, None if s != d else pad, 1) for s in range(len(x.shape)))
-#         x = torch.cat([x, x[idx]], dim=d)
+def pad_axis_periodic(tensor, axis, pad_left, pad_right):
+    """Periodically pad tensor along a single axis."""
+    N = tensor.shape[axis]
+    left = tensor[axslice(axis, N-pad_left, N)]
+    right = tensor[axslice(axis, 0, pad_right)]
+    return tf.concat([left, tensor, right], axis)
 
-#         idx = tuple(slice(None if s != d else -2 * pad, None if s != d else -pad, 1) for s in range(len(x.shape)))
-#         x = torch.cat([x[idx], x], dim=d)
-#         pass
 
-#     return
+class PeriodicPad3D:
+    """3D periodic padding layer."""
+
+    def __init__(self, kernel_size, kernel_center):
+        self.kernel_size = kernel_size
+        self.kernel_center = kernel_center
+        self.pad_left = kernel_center
+        self.pad_right = [ks - 1 - kc for ks, kc in zip(kernel_size, kernel_center)]
+
+    def __call__(self, x):
+        # Iteratively pad axes
+        for i in range(3):
+            x = pad_axis_periodic(x, i+1, self.pad_left[i], self.pad_right[i])
+        return x
+
+
+class PeriodicConv3D(tf.keras.layers.Layer):
+    """3D convolution layer with periodic padding."""
+
+    def __init__(self, filters, kernel_size, kernel_center, **kw):
+        self.pad_layer = PeriodicPad3D(kernel_size, kernel_center)
+        self.conv_layer = tf.keras.layers.Conv3D(filters, kernel_size, padding='valid', **kw)
+
+    def __call__(self, x):
+        return self.conv_layer(self.pad_layer(x))
+
+
+class PeriodicConv3DTranspose:
+    """3D transposed convolution layer with periodic padding."""
+
+    def __init__(self, filters, kernel_size, kernel_center, **kw):
+        pass
+
+    def __call__(self, x):
+        pass
 
 
 class Unet(tf.keras.Model):
@@ -43,6 +73,8 @@ class Unet(tf.keras.Model):
         padding = 'same'
         strides = (2, 2, 2)
         output_channels = 6
+
+
 
         self.Lc11 = tf.keras.layers.Conv3D(filters, kernel_size, activation=activation, padding=padding)
         self.Lc12 = tf.keras.layers.Conv3D(filters, kernel_size, activation=activation, padding=padding)
