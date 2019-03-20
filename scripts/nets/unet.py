@@ -25,41 +25,48 @@ def pad_axis_periodic(tensor, axis, pad_left, pad_right):
     return tf.concat([left, tensor, right], axis)
 
 
-class PeriodicPad3D:
-    """3D periodic padding layer."""
-
-    def __init__(self, kernel_size, kernel_center):
-        self.kernel_size = kernel_size
-        self.kernel_center = kernel_center
-        self.pad_left = kernel_center
-        self.pad_right = [ks - 1 - kc for ks, kc in zip(kernel_size, kernel_center)]
-
-    def __call__(self, x):
-        # Iteratively pad axes
-        for i in range(3):
-            x = pad_axis_periodic(x, i+1, self.pad_left[i], self.pad_right[i])
-        return x
-
-
-class PeriodicConv3D(tf.keras.layers.Layer):
+class PeriodicConv3D(tf.keras.Model):
     """3D convolution layer with periodic padding."""
 
     def __init__(self, filters, kernel_size, kernel_center, **kw):
-        self.pad_layer = PeriodicPad3D(kernel_size, kernel_center)
-        self.conv_layer = tf.keras.layers.Conv3D(filters, kernel_size, padding='valid', **kw)
+        super().__init__()
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.kernel_center = kernel_center
+        self.pad_left = kernel_center
+        self.pad_right = [ks - kc - 1 for ks, kc in zip(kernel_size, kernel_center)]
+        self.conv_valid = tf.keras.layers.Conv3D(filters, kernel_size, padding='valid', **kw)
 
     def __call__(self, x):
-        return self.conv_layer(self.pad_layer(x))
+        # Iteratively apply periodic padding, skipping first dimension (batch)
+        for axis in range(3):
+            x = pad_axis_periodic(x, axis+1, self.pad_left[axis], self.pad_right[axis])
+        # Apply valid convolution
+        return self.conv_valid(x)
 
 
-class PeriodicConv3DTranspose:
+class PeriodicConv3DTranspose(tf.keras.Model):
     """3D transposed convolution layer with periodic padding."""
 
-    def __init__(self, filters, kernel_size, kernel_center, **kw):
-        pass
+    def __init__(self, filters, kernel_size, kernel_center, strides=(1, 1, 1), **kw):
+        super().__init__()
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.kernel_center = kernel_center
+        self.pad_left = kernel_center
+        self.pad_right = [ks - kc - 1 for ks, kc in zip(kernel_size, kernel_center)]
+        self.strides = strides
+        self.output_padding = [[0, 0]] + [[0, s - 1] for s in strides] + [[0, 0]]
+        self.conv_valid = tf.keras.layers.Conv3DTranspose(filters, kernel_size, strides=strides, padding='valid', **kw)
 
     def __call__(self, x):
-        pass
+        # Apply valid convolution
+        x = self.conv_valid(x)
+        # Pad with zeros to original expanded size
+        print(x.shape)
+        #x = tf.pad(x, self.output_padding)
+        #print(x.shape)
+        return x
 
 
 class Unet(tf.keras.Model):
