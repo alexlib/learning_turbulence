@@ -25,20 +25,52 @@ def pad_axis_periodic(tensor, axis, pad_left, pad_right):
     return tf.concat([left, tensor, right], axis)
 
 
+def compress_axis_periodic(tensor, axis, pad_left, pad_right):
+    """Additively compress periodic padding along a single axis."""
+    N_ext = tensor.shape[axis]
+    # Take center of tensor
+    center = tensor[axslice(axis, pad_left, N_ext-pad_right)]
+    # Build tensor of the periodic image
+    left = tensor[axslice(axis, 0, pad_left)]
+    right = tensor[axslice(axis, N_ext-pad_right, N_ext)]
+    void_shape = tensor.shape.as_list()
+    void_shape[axis] = N_ext - 2*pad_left - 2*pad_right
+    void = tf.zeros(void_shape, dtype=tensor.dtype)
+    image = tf.concat([right, void, left], axis)
+    return center + image
+    # Can't add via slices because tensor objects don't support assigment in eager mode
+    #center[axslice(axis, 0, pad_right)] += tensor[axslice(axis, N_ext-pad_right, N_ext)]
+    #center[axslice(axis, N_ext-pad_left, N_ext)] += tensor[axslice(axis, 0, pad_left)]
+    #return center
+
+
 class PeriodicConv3D(tf.keras.Model):
     """3D convolution layer with periodic padding."""
 
-    def __init__(self, filters, kernel_size, kernel_center, **kw):
+    def __init__(self, filters, kernel_size, kernel_center, strides=(1,1,1), **kw):
         super().__init__()
+        # Store inputs
         self.filters = filters
         self.kernel_size = kernel_size
         self.kernel_center = kernel_center
+        self.strides = strides
+        # Calculate pads
         self.pad_left = kernel_center
         self.pad_right = [ks - kc - 1 for ks, kc in zip(kernel_size, kernel_center)]
-        self.conv_valid = tf.keras.layers.Conv3D(filters, kernel_size, padding='valid', **kw)
+        # Build valid convolution
+        self.conv_valid = tf.keras.layers.Conv3D(filters, kernel_size, strides=strides, padding='valid', **kw)
+    
+    def check_input_shape(self, input_shape):
+        # Check strides evenly divide data shape
+        batch, *data_shape, channels = input_shape
+        for n, s in zip(data_shape, self.strides):
+            if n%s != 0:
+                raise ValueError("Strides must evenly divide data shape in periodic convolution.")
 
     def __call__(self, x):
-        # Iteratively apply periodic padding, skipping first dimension (batch)
+        # Check shape
+        self.check_input_shape(x.shape)
+        # Iteratively apply periodic padding, skipping first axis (batch)
         for axis in range(3):
             x = pad_axis_periodic(x, axis+1, self.pad_left[axis], self.pad_right[axis])
         # Apply valid convolution
@@ -56,16 +88,17 @@ class PeriodicConv3DTranspose(tf.keras.Model):
         self.pad_left = kernel_center
         self.pad_right = [ks - kc - 1 for ks, kc in zip(kernel_size, kernel_center)]
         self.strides = strides
-        self.output_padding = [[0, 0]] + [[0, s - 1] for s in strides] + [[0, 0]]
+        self.output_padding = [[0, 0]] + [[0, min(ks, s) - 1] for ks, s in zip(kernel_size, strides)] + [[0, 0]]
         self.conv_valid = tf.keras.layers.Conv3DTranspose(filters, kernel_size, strides=strides, padding='valid', **kw)
 
     def __call__(self, x):
         # Apply valid convolution
         x = self.conv_valid(x)
         # Pad with zeros to original expanded size
-        print(x.shape)
-        #x = tf.pad(x, self.output_padding)
-        #print(x.shape)
+        x = tf.pad(x, self.output_padding)
+        # Additively compress periodic padding, skipping first axis (batch)
+        for axis in range(3):
+            x = compress_axis_periodic(x, axis+1, self.pad_left[axis], self.pad_right[axis])
         return x
 
 
