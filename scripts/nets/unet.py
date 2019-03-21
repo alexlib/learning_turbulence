@@ -3,6 +3,7 @@
 """
 Issues:
     - Why did the upconvolutions have a different kernel size?
+    - Why all linear activation?
 """
 
 import tensorflow as tf
@@ -107,9 +108,11 @@ class PeriodicConv3DTranspose(tf.keras.Model):
 class Unet(tf.keras.Model):
 
     def __init__(self):
-        super(Unet, self).__init__()
+        super().__init__()
 
-        filters = 16
+        # Net parameters
+        stacks = 2
+        filters = 6
         kernel_size = (3, 3, 3)
         kernel_center = (1, 1, 1)
         activation = 'relu'
@@ -132,50 +135,12 @@ class Unet(tf.keras.Model):
                 stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, activation=activation))
             return stack
 
-        self.down_stacks = [stack_down(3), stack_down(3)]
-        self.up_stacks = [stack_up(3), stack_up(3)]
-        self.Loutputs = PeriodicConv3D(output_channels, (1, 1, 1), (0, 0, 0), activation=activation)
+        self.down_stacks = [stack_down(3) for i in range(stacks)]
+        self.up_stacks = [stack_up(3) for i in range(stacks)]
+        self.outlayer = PeriodicConv3D(output_channels, (1, 1, 1), (0, 0, 0), activation=activation)
 
-        # self.Lc21 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lc22 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lp23 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', strides=(2, 2), padding='same')
-
-        # self.Lc31 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lc32 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lp33 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', strides=(2, 2), padding='same')
-
-        # self.Lc41 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lc42 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lp43 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', strides=(2, 2), padding='same')
-
-        # self.Lc51 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lc52 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lp53 = tf.keras.layers.Conv2D(16, (6, 6), activation='linear', strides=(4, 4), padding='same')
-
-        # self.LcZ1 = tf.keras.layers.Conv2D(16, (16, 16), activation='linear', padding='same')
-        # self.LcZ2 = tf.keras.layers.Conv2D(16, (16, 16), activation='linear', padding='same')
-
-        # self.Lu61 = tf.keras.layers.Conv2DTranspose(16, (6, 6), activation='linear', strides=(4, 4), padding='same')
-        # self.Lc62 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lc63 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-
-        # self.Lu71 = tf.keras.layers.Conv2DTranspose(16, (2, 2), activation='linear', strides=(2, 2), padding='same')
-        # self.Lc72 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lc73 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-
-        # self.Lu81 = tf.keras.layers.Conv2DTranspose(16, (2, 2), activation='linear', strides=(2, 2), padding='same')
-        # self.Lc82 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lc83 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-
-        # self.Lu91 = tf.keras.layers.Conv2DTranspose(16, (2, 2), activation='linear', strides=(2, 2), padding='same')
-        # self.Lc92 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lc93 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-
-        # self.Lu101 = tf.keras.layers.Conv2DTranspose(16, (2, 2), activation='linear', strides=(2, 2), padding='same')
-        # self.Lc102 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-        # self.Lc103 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
-
-    def call(self, x):
+    def call(self, x_list):
+        """Call unet on multiple inputs, combining at bottom."""
 
         def eval_down(x):
             """Evaluate down unet stacks, saving partials before each downsampling."""
@@ -185,22 +150,28 @@ class Unet(tf.keras.Model):
                     x = layer(x)
                 partials.append(x)
                 x = stack[-1](x)
-            return partials, x
+            return x, partials
 
         def eval_up(x, partials):
             """Evaluate up unet stacks, concatenating partials after each upsampling."""
             for stack in self.up_stacks:
                 x = stack[0](x)
-                tf.concat([x, partials.pop()], axis=4)
+                x = tf.concat([x, partials.pop()], axis=4)
                 for layer in stack[1:]:
                     x = layer(x)
             return x
 
-        pd, x = eval_down(x)
-        x = eval_up(x, pd)
-        return self.Loutputs(x)
+        # Evaluate down for each input
+        x, partials = zip(*[eval_down(x) for x in x_list])
+        # Concatenate results and partials for each input
+        x = tf.concat(x, axis=4)
+        partials = list(zip(*partials))
+        partials = [tf.concat(p, axis=4) for p in partials]
+        # Evaluate up
+        x = eval_up(x, partials)
+        return self.outlayer(x)
 
-    def cost_function(self, in_Net, labels):
-        alpha = self.call(in_Net)
-        return tf.reduce_mean((alpha - labels)**2), alpha
+    def cost_function(self, inputs, labels):
+        outputs = self.call(inputs)
+        return tf.reduce_mean((outputs - labels)**2), outputs
 
