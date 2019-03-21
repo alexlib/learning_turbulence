@@ -59,7 +59,7 @@ class PeriodicConv3D(tf.keras.Model):
         self.pad_right = [ks - kc - 1 for ks, kc in zip(kernel_size, kernel_center)]
         # Build valid convolution
         self.conv_valid = tf.keras.layers.Conv3D(filters, kernel_size, strides=strides, padding='valid', **kw)
-    
+
     def check_input_shape(self, input_shape):
         # Check strides evenly divide data shape
         batch, *data_shape, channels = input_shape
@@ -82,12 +82,14 @@ class PeriodicConv3DTranspose(tf.keras.Model):
 
     def __init__(self, filters, kernel_size, kernel_center, strides=(1, 1, 1), **kw):
         super().__init__()
+        # Store inputs
         self.filters = filters
         self.kernel_size = kernel_size
         self.kernel_center = kernel_center
+        self.strides = strides
+        # Calculate pads
         self.pad_left = kernel_center
         self.pad_right = [ks - kc - 1 for ks, kc in zip(kernel_size, kernel_center)]
-        self.strides = strides
         self.output_padding = [[0, 0]] + [[0, min(ks, s) - 1] for ks, s in zip(kernel_size, strides)] + [[0, 0]]
         self.conv_valid = tf.keras.layers.Conv3DTranspose(filters, kernel_size, strides=strides, padding='valid', **kw)
 
@@ -109,22 +111,30 @@ class Unet(tf.keras.Model):
 
         filters = 16
         kernel_size = (3, 3, 3)
+        kernel_center = (1, 1, 1)
         activation = 'relu'
-        padding = 'same'
         strides = (2, 2, 2)
         output_channels = 6
 
+        def stack_down(stacksize):
+            """Build convolution stack with downsampling on the last."""
+            stack = []
+            for i in range(stacksize - 1):
+                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, activation=activation))
+            stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, activation=activation, strides=strides))
+            return stack
 
+        def stack_up(stacksize):
+            """Build convolution stack with upsampling on the first."""
+            stack = []
+            stack.append(PeriodicConv3DTranspose(filters, kernel_size, kernel_center, activation=activation, strides=strides))
+            for i in range(stacksize - 1):
+                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, activation=activation))
+            return stack
 
-        self.Lc11 = tf.keras.layers.Conv3D(filters, kernel_size, activation=activation, padding=padding)
-        self.Lc12 = tf.keras.layers.Conv3D(filters, kernel_size, activation=activation, padding=padding)
-        self.Lp13 = tf.keras.layers.Conv3D(filters, kernel_size, activation=activation, padding=padding, strides=strides)
-
-        self.Lu101 = tf.keras.layers.Conv3DTranspose(filters, kernel_size, activation=activation, padding=padding, strides=strides)
-        self.Lc102 = tf.keras.layers.Conv3D(filters, kernel_size, activation=activation, padding=padding)
-        self.Lc103 = tf.keras.layers.Conv3D(filters, kernel_size, activation=activation, padding=padding)
-
-        self.Loutputs = tf.keras.layers.Conv3D(output_channels, (1, 1, 1), activation=activation)
+        self.down_stacks = [stack_down(3), stack_down(3)]
+        self.up_stacks = [stack_up(3), stack_up(3)]
+        self.Loutputs = PeriodicConv3D(output_channels, (1, 1, 1), (0, 0, 0), activation=activation)
 
         # self.Lc21 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
         # self.Lc22 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
@@ -165,62 +175,30 @@ class Unet(tf.keras.Model):
         # self.Lc102 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
         # self.Lc103 = tf.keras.layers.Conv2D(16, (3, 3), activation='linear', padding='same')
 
+    def call(self, x):
 
+        def eval_down(x):
+            """Evaluate down unet stacks, saving partials before each downsampling."""
+            partials = []
+            for stack in self.down_stacks:
+                for layer in stack[:-1]:
+                    x = layer(x)
+                partials.append(x)
+                x = stack[-1](x)
+            return partials, x
 
-    def call(self, in_Net):
+        def eval_up(x, partials):
+            """Evaluate up unet stacks, concatenating partials after each upsampling."""
+            for stack in self.up_stacks:
+                x = stack[0](x)
+                tf.concat([x, partials.pop()], axis=4)
+                for layer in stack[1:]:
+                    x = layer(x)
+            return x
 
-        c1 = self.Lc11(in_Net)
-        c1 = self.Lc12(c1)
-        p1 = self.Lp13(c1)
-
-        c9 = p1
-        u10 = self.Lu101(c9)
-        u10 = tf.concat([u10, c1], axis=4)
-        c10 = self.Lc102(u10)
-        c10 = self.Lc103(c10)
-
-        outputs = self.Loutputs(c10)
-        return outputs
-
-        # c2 = self.Lc21(p1)
-        # c2 = self.Lc22(c2)
-        # p2 = self.Lp23(c2)
-
-        # c3 = self.Lc31(p2)
-        # c3 = self.Lc32(c3)
-        # p3 = self.Lp33(c3)
-
-        # c4 = self.Lc41(p3)
-        # c4 = self.Lc42(c4)
-        # p4 = self.Lp43(c4)
-
-        # c5 = self.Lc51(p4)
-        # c5 = self.Lc52(c5)
-        # p5 = self.Lp53(c5)
-
-        # z1 = self.LcZ1(p5)
-        # z1 = self.LcZ2(z1)
-
-        # u6 = self.Lu61(z1)
-        # u6 = tf.concat([u6, c5], axis=3)
-        # c6 = self.Lc62(u6)
-        # c6 = self.Lc63(c6)
-
-        # u7 = self.Lu71(c6)
-        # u7 = tf.concat([u7, c4], axis=3)
-        # c7 = self.Lc72(u7)
-        # c7 = self.Lc73(c7)
-
-        # u8 = self.Lu81(c7)
-        # u8 = tf.concat([u8, c3], axis=3)
-        # c8 = self.Lc82(u8)
-        # c8 = self.Lc83(c8)
-
-        # u9 = self.Lu91(c8)
-        # u9 = tf.concat([u9, c2], axis=3)
-        # c9 = self.Lc92(u9)
-        # c9 = self.Lc93(c9)
-
+        pd, x = eval_down(x)
+        x = eval_up(x, pd)
+        return self.Loutputs(x)
 
     def cost_function(self, in_Net, labels):
         alpha = self.call(in_Net)
