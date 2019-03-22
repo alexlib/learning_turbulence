@@ -6,6 +6,7 @@ Issues:
     - Why all linear activation?
 """
 
+import numpy as np
 import tensorflow as tf
 
 
@@ -107,37 +108,58 @@ class PeriodicConv3DTranspose(tf.keras.Model):
 
 class Unet(tf.keras.Model):
 
-    def __init__(self):
+    def __init__(self, stacks, stack_width, filters, output_channels, kernel_size=(3,3,3), kernel_center=None, strides=(2,2,2), **kw):
+        """
+        Parameters
+        ----------
+        stacks : int
+            Number of unet stacks.
+        stackwidth : int
+            Number of convolutions per stack.
+        filters : int
+            Number of intermediate convolution filters.
+        output_channels : int
+            Number of output channels
+        kernel_size : int or tuple of ints
+            Kernel size for each dimension, default: (3,3,3)
+        kernel_center : int or tuple of ints
+            Kernel center for each dimension, default: kernel_size//2
+        strides : tuple of ints
+            Strides for each dimension, default: (2,2,2)
+
+        Other keyword arguments are passed to the convolution layers.
+
+        """
         super().__init__()
 
-        # Net parameters
-        stacks = 2
-        filters = 6
-        kernel_size = (3, 3, 3)
-        kernel_center = (1, 1, 1)
-        activation = 'relu'
-        strides = (2, 2, 2)
-        output_channels = 6
+        # Handle integer kernel specifications
+        if isinstance(kernel_size, int):
+            kernel_size = (kernel_size,) * 3
+        if isinstance(kernel_center, int):
+            kernel_center = (kernel_center,) * 3
+        if kernel_center is None:
+            kernel_center = tuple(ks//2 for ks in kernel_size)
+        print(kernel_center)
 
         def stack_down(stacksize):
             """Build convolution stack with downsampling on the last."""
             stack = []
             for i in range(stacksize - 1):
-                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, activation=activation))
-            stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, activation=activation, strides=strides))
+                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, **kw))
+            stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, strides=strides, **kw))
             return stack
 
         def stack_up(stacksize):
             """Build convolution stack with upsampling on the first."""
             stack = []
-            stack.append(PeriodicConv3DTranspose(filters, kernel_size, kernel_center, activation=activation, strides=strides))
+            stack.append(PeriodicConv3DTranspose(filters, kernel_size, kernel_center, strides=strides, **kw))
             for i in range(stacksize - 1):
-                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, activation=activation))
+                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, **kw))
             return stack
 
-        self.down_stacks = [stack_down(3) for i in range(stacks)]
-        self.up_stacks = [stack_up(3) for i in range(stacks)]
-        self.outlayer = PeriodicConv3D(output_channels, (1, 1, 1), (0, 0, 0), activation=activation)
+        self.down_stacks = [stack_down(stack_width) for i in range(stacks)]
+        self.up_stacks = [stack_up(stack_width) for i in range(stacks)]
+        self.outlayer = PeriodicConv3D(output_channels, (1, 1, 1), (0, 0, 0), **kw)
 
     def call(self, x_list):
         """Call unet on multiple inputs, combining at bottom."""
