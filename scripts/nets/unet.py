@@ -193,7 +193,3 @@ class Unet(tf.keras.Model):
         x = eval_up(x, partials)
         return self.outlayer(x)
 
-    def cost_function(self, inputs, labels):
-        outputs = self.call(inputs)
-        return tf.reduce_mean((outputs - labels)**2), outputs
-
