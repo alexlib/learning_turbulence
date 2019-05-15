@@ -18,11 +18,23 @@ activation = 'relu'
 # Training parameters
 RESTORE = False
 epochs = 1
-iters = 20
-batch_size = 1
+snapshots = 2000
+perm_seed = 978
+testing_size = 200
+training_size = 200
 learning_rate = 1e-3
 checkpoint_path = "checkpoints/unet"
 checkpoint_cadence = 10
+diss_cost = 0
+
+# Divide training data
+# Randomly permute snapshots
+rand = np.random.RandomState(seed=perm_seed)
+snapshots_perm = 1 + rand.permutation(snapshots)
+# Select testing data
+snapshots_test = snapshots_perm[:testing_size]
+# Select training data
+snapshots_train = snapshots_perm[testing_size:testing_size+training_size]
 
 # Data loading
 def load_data(savenum):
@@ -89,14 +101,14 @@ def cost_function(self, inputs, labels):
     D_diff = D_true - D_pred
     # Normalized L2-squared dissipation error
     L2_D_error = tf.reduce_mean(D_diff**2) / tf.reduce_mean(D_true**2)
-    # outputs = self.call(inputs)
-    # return tf.reduce_mean((outputs - labels)**2), outputs
+    return (1-diss_cost) * L2_tau_d_error + diss_cost * L2_D_error
 
 # Learning loop
+costs = []
 with tf.device('/cpu:0'):
     for epoch in range(epochs):
-        for iter in range(iters):
-            savenum = iter  ## CHANGE
+        costs_epoch = []
+        for savenum in rand.permutation(snapshots_train):
             # Load adjascent outputs
             inputs_0, labels_0 = load_data(savenum)
             inputs_1, labels_1 = load_data(savenum+1)
@@ -110,7 +122,11 @@ with tf.device('/cpu:0'):
             weight_grads = tape.gradient(cost, model.variables)
             optimizer.apply_gradients(zip(weight_grads, model.variables), global_step=tf.train.get_or_create_global_step())
             # Status and output
+            costs_epoch.append(cost.numpy())
             print('epoch.iter: %i.%i, cost: %f' %(epoch, iter, cost.numpy()))
             if (iter+1) % checkpoint_cadence == 0:
                 print("Saving weights.")
                 model.save_weights(checkpoint_path)
+        costs.append(costs_epoch)
+costs = np.array(costs)
+np.save('costs.npy', costs)
