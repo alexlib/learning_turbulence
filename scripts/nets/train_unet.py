@@ -18,14 +18,16 @@ activation = 'relu'
 # Training parameters
 RESTORE = False
 epochs = 1
-snapshots = 2000
+snapshots = 200
 perm_seed = 978
-testing_size = 200
-training_size = 200
+testing_size = 20
+training_size = 20
 learning_rate = 1e-3
 checkpoint_path = "checkpoints/unet"
 checkpoint_cadence = 10
 diss_cost = 0
+device = "/device:GPU:0"
+#device = "/cpu:0"
 
 # Divide training data
 # Randomly permute snapshots
@@ -38,7 +40,7 @@ snapshots_train = snapshots_perm[testing_size:testing_size+training_size]
 
 # Data loading
 def load_data(savenum):
-    filename = 'snapshots_s%i.nc' %savenum
+    filename = 'filtered/snapshots_s%i.nc' %savenum
     dataset = xarray.open_dataset(filename)
     comps = ['xx', 'yy', 'zz', 'xy', 'yz', 'zx']
     # Strain rate
@@ -67,26 +69,30 @@ def array_of_tf_components(tf_tens):
     # Collect components
     # Tensorflow shaped as (batch, *shape, channels)
     comps = ['xx', 'yy', 'zz', 'xy', 'yz', 'zx']
-    c = {comp: tens[..., n] for n, comp in enumerate(comps)}
+    c = {comp: tf_tens[..., n] for n, comp in enumerate(comps)}
     c['yx'] = c['xy']
     c['zy'] = c['yz']
     c['xz'] = c['zx']
     # Build object array
     tens_array = np.array([[c['xx'], c['xy'], c['xz']],
                            [c['yx'], c['yy'], c['yz']],
-                           [c['zx'], c['zy'], c['zz']],])
+                           [c['zx'], c['zy'], c['zz']]])
     return tens_array
 
 def deviatoric_part(tens):
     """Compute deviatoric part of tensor."""
     tr_tens = np.trace(tens)
-    return tens - np.diag([tr_tens, tr_tens, tr_tens]) / 3
+    tens_d = tens.copy()
+    N = tens.shape[0]
+    for i in range(N):
+        tens_d[i, i] = tens[i, i] - tr_tens / N
+    return tens_d
 
-def cost_function(self, inputs, labels):
+def cost_function(inputs, labels):
     # Call net
     outputs = model.call(inputs)
     # Load components into object arrays, take deviatoric part of stresses
-    S_true = array_of_tf_components(inputs)
+    S_true = array_of_tf_components(inputs[0])
     tau_d_true = deviatoric_part(array_of_tf_components(labels))
     tau_d_pred = deviatoric_part(array_of_tf_components(outputs))
     # Pointwise deviatoric stress error
@@ -105,16 +111,19 @@ def cost_function(self, inputs, labels):
 
 # Learning loop
 costs = []
-with tf.device('/cpu:0'):
+with tf.device(device):
     for epoch in range(epochs):
+        print(f"Beginning epoch {epoch}")
         costs_epoch = []
         for savenum in rand.permutation(snapshots_train):
             # Load adjascent outputs
             inputs_0, labels_0 = load_data(savenum)
-            inputs_1, labels_1 = load_data(savenum+1)
+            #inputs_1, labels_1 = load_data(savenum+1)
             # Combine inputs to predict later output
-            tf_inputs = [tf.cast(inputs_0, datatype), tf.cast(inputs_1, datatype)]
-            tf_labels = tf.cast(labels_1, datatype)
+            #tf_inputs = [tf.cast(inputs_0, datatype), tf.cast(inputs_1, datatype)]
+            #tf_labels = tf.cast(labels_1, datatype)
+            tf_inputs = [tf.cast(inputs_0, datatype)]
+            tf_labels = tf.cast(labels_0, datatype)
             # Run optimization
             with tf.GradientTape() as tape:
                 tape.watch(model.variables)
