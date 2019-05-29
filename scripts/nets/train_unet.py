@@ -96,7 +96,7 @@ def cost_function(inputs, labels):
     tau_d_true = deviatoric_part(array_of_tf_components(labels))
     tau_d_pred = deviatoric_part(array_of_tf_components(outputs))
     # Pointwise deviatoric stress error
-    tau_d_diff = tau_d_pred - f_tau_d_true
+    tau_d_diff = tau_d_pred - tau_d_true
     f2_tau_d_diff = np.trace(np.dot(tau_d_diff, tau_d_diff.T))
     f2_tau_d_true = np.trace(np.dot(tau_d_true, tau_d_true.T))
     # Normalized L2-squared deviatoric stress error
