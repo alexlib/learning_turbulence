@@ -74,9 +74,12 @@ def array_of_tf_components(tf_tens):
     c['zy'] = c['yz']
     c['xz'] = c['zx']
     # Build object array
-    tens_array = np.array([[c['xx'], c['xy'], c['xz']],
-                           [c['yx'], c['yy'], c['yz']],
-                           [c['zx'], c['zy'], c['zz']]])
+    tens_array = np.array([[None, None, None],
+                           [None, None, None],
+                           [None, None, None]], dtype=object)
+    for i, si in enumerate(['x', 'y', 'z']):
+        for j, sj in enumerate(['x', 'y', 'z']):
+            tens_array[i, j] = c[si+sj]
     return tens_array
 
 def deviatoric_part(tens):
