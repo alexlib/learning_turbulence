@@ -139,7 +139,6 @@ class Unet(tf.keras.Model):
             kernel_center = (kernel_center,) * 3
         if kernel_center is None:
             kernel_center = tuple(ks//2 for ks in kernel_size)
-        print(kernel_center)
 
         def stack_down(stacksize):
             """Build convolution stack with downsampling on the last."""

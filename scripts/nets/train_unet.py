@@ -4,11 +4,12 @@ import numpy as np
 import xarray
 import tensorflow as tf
 import unet
+import time
 tf.enable_eager_execution()
 
 # Net parameters
 input_channels = 6
-datatype = tf.float32
+datatype = tf.float64
 stacks = 3
 stack_width = 3
 filters = 6
@@ -18,11 +19,11 @@ activation = 'relu'
 # Training parameters
 RESTORE = False
 epochs = 1
-snapshots = 200
+snapshots = 2000
 perm_seed = 978
-testing_size = 20
-training_size = 20
-learning_rate = 1e-3
+testing_size = 200
+training_size = 1800
+learning_rate = 1e-6
 checkpoint_path = "checkpoints/unet"
 checkpoint_cadence = 10
 diss_cost = 0
@@ -91,9 +92,7 @@ def deviatoric_part(tens):
         tens_d[i, i] = tens[i, i] - tr_tens / N
     return tens_d
 
-def cost_function(inputs, labels):
-    # Call net
-    outputs = model.call(inputs)
+def cost_function(inputs, outputs, labels):
     # Load components into object arrays, take deviatoric part of stresses
     S_true = array_of_tf_components(inputs[0])
     tau_d_true = deviatoric_part(array_of_tf_components(labels))
@@ -103,25 +102,27 @@ def cost_function(inputs, labels):
     f2_tau_d_diff = np.trace(np.dot(tau_d_diff, tau_d_diff.T))
     f2_tau_d_true = np.trace(np.dot(tau_d_true, tau_d_true.T))
     # Normalized L2-squared deviatoric stress error
-    L2_tau_d_error = tf.reduce_mean(f2_tau_d_diff) / tf.reduce_mean(f2_tau_d_true)
+    L2_tau_d_error = tf.reduce_mean(f2_tau_d_diff)# / tf.reduce_mean(f2_tau_d_true)
     # Pointwise dissipation error
     D_true = np.trace(np.dot(tau_d_true, S_true.T))
     D_pred = np.trace(np.dot(tau_d_pred, S_true.T))
     D_diff = D_true - D_pred
     # Normalized L2-squared dissipation error
     L2_D_error = tf.reduce_mean(D_diff**2) / tf.reduce_mean(D_true**2)
-    return (1-diss_cost) * L2_tau_d_error + diss_cost * L2_D_error
+    cost = (1-diss_cost) * L2_tau_d_error + diss_cost * L2_D_error
+    return cost
 
 # Learning loop
 costs = []
-with tf.device(device):
-    for epoch in range(epochs):
-        print(f"Beginning epoch {epoch}")
-        costs_epoch = []
-        for savenum in rand.permutation(snapshots_train):
-            # Load adjascent outputs
-            inputs_0, labels_0 = load_data(savenum)
-            #inputs_1, labels_1 = load_data(savenum+1)
+#with tf.device(device):
+for epoch in range(epochs):
+    print(f"Beginning epoch {epoch}", flush=True)
+    costs_epoch = []
+    for iteration, savenum in enumerate(rand.permutation(snapshots_train)):
+        # Load adjascent outputs
+        inputs_0, labels_0 = load_data(savenum)
+        #inputs_1, labels_1 = load_data(savenum+1)
+        with tf.device(device):    
             # Combine inputs to predict later output
             #tf_inputs = [tf.cast(inputs_0, datatype), tf.cast(inputs_1, datatype)]
             #tf_labels = tf.cast(labels_1, datatype)
@@ -130,15 +131,17 @@ with tf.device(device):
             # Run optimization
             with tf.GradientTape() as tape:
                 tape.watch(model.variables)
-                cost, tf_outputs = cost_function(tf_inputs, tf_labels)
+                tf_outputs = model.call(tf_inputs)
+                cost = cost_function(tf_inputs, tf_outputs, tf_labels)
             weight_grads = tape.gradient(cost, model.variables)
             optimizer.apply_gradients(zip(weight_grads, model.variables), global_step=tf.train.get_or_create_global_step())
-            # Status and output
-            costs_epoch.append(cost.numpy())
-            print('epoch.iter: %i.%i, cost: %f' %(epoch, iter, cost.numpy()))
-            if (iter+1) % checkpoint_cadence == 0:
-                print("Saving weights.")
-                model.save_weights(checkpoint_path)
-        costs.append(costs_epoch)
+        # Status and output
+        costs_epoch.append(cost.numpy())
+        print('epoch.iter: %i.%i, cost: %.3e' %(epoch, iteration, cost.numpy()), flush=True)
+        if (iteration+1) % checkpoint_cadence == 0:
+            print("Saving weights.", flush=True)
+            model.save_weights(checkpoint_path)
+    model.save_weights(checkpoint_path)
+    costs.append(costs_epoch)
 costs = np.array(costs)
 np.save('costs.npy', costs)
