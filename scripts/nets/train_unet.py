@@ -6,29 +6,8 @@ import tensorflow as tf
 import unet
 import time
 tf.enable_eager_execution()
+from training_parameters import *
 
-# Net parameters
-input_channels = 6
-datatype = tf.float64
-stacks = 3
-stack_width = 3
-filters = 6
-output_channels = 6
-activation = 'relu'
-
-# Training parameters
-RESTORE = False
-epochs = 1
-snapshots = 2000
-perm_seed = 978
-testing_size = 200
-training_size = 1800
-learning_rate = 1e-6
-checkpoint_path = "checkpoints/unet"
-checkpoint_cadence = 10
-diss_cost = 0
-device = "/device:GPU:0"
-#device = "/cpu:0"
 
 # Divide training data
 # Randomly permute snapshots
@@ -100,15 +79,14 @@ def cost_function(inputs, outputs, labels):
     # Pointwise deviatoric stress error
     tau_d_diff = tau_d_pred - tau_d_true
     f2_tau_d_diff = np.trace(np.dot(tau_d_diff, tau_d_diff.T))
-    f2_tau_d_true = np.trace(np.dot(tau_d_true, tau_d_true.T))
-    # Normalized L2-squared deviatoric stress error
-    L2_tau_d_error = tf.reduce_mean(f2_tau_d_diff)# / tf.reduce_mean(f2_tau_d_true)
+    # L2-squared deviatoric stress error
+    L2_tau_d_error = tf.reduce_mean(f2_tau_d_diff)
     # Pointwise dissipation error
     D_true = np.trace(np.dot(tau_d_true, S_true.T))
     D_pred = np.trace(np.dot(tau_d_pred, S_true.T))
     D_diff = D_true - D_pred
-    # Normalized L2-squared dissipation error
-    L2_D_error = tf.reduce_mean(D_diff**2) / tf.reduce_mean(D_true**2)
+    # L2-squared dissipation error
+    L2_D_error = tf.reduce_mean(D_diff**2)
     cost = (1-diss_cost) * L2_tau_d_error + diss_cost * L2_D_error
     return cost
 
@@ -122,7 +100,7 @@ for epoch in range(epochs):
         # Load adjascent outputs
         inputs_0, labels_0 = load_data(savenum)
         #inputs_1, labels_1 = load_data(savenum+1)
-        with tf.device(device):    
+        with tf.device(device):
             # Combine inputs to predict later output
             #tf_inputs = [tf.cast(inputs_0, datatype), tf.cast(inputs_1, datatype)]
             #tf_labels = tf.cast(labels_1, datatype)

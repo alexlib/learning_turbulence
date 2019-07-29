@@ -1,11 +1,5 @@
 """Define u-net."""
 
-"""
-Issues:
-    - Why did the upconvolutions have a different kernel size?
-    - Why all linear activation?
-"""
-
 import numpy as np
 import tensorflow as tf
 
