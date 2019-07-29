@@ -13,7 +13,7 @@ activation = 'relu'
 
 # Training parameters
 RESTORE = False
-epochs = 1
+epochs = 2
 snapshots = 20
 perm_seed = 978
 testing_size = 2

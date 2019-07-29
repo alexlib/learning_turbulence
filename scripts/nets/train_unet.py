@@ -91,10 +91,12 @@ def cost_function(inputs, outputs, labels):
     return cost
 
 # Learning loop
-costs = []
+training_costs = []
+testing_costs = []
 #with tf.device(device):
 for epoch in range(epochs):
     print(f"Beginning epoch {epoch}", flush=True)
+    # Train
     costs_epoch = []
     for iteration, savenum in enumerate(rand.permutation(snapshots_train)):
         # Load adjascent outputs
@@ -115,11 +117,31 @@ for epoch in range(epochs):
             optimizer.apply_gradients(zip(weight_grads, model.variables), global_step=tf.train.get_or_create_global_step())
         # Status and output
         costs_epoch.append(cost.numpy())
-        print('epoch.iter: %i.%i, cost: %.3e' %(epoch, iteration, cost.numpy()), flush=True)
+        print('epoch.iter.save: %i.%i.%i, training cost: %.3e' %(epoch, iteration, savenum, cost.numpy()), flush=True)
         if (iteration+1) % checkpoint_cadence == 0:
             print("Saving weights.", flush=True)
             model.save_weights(checkpoint_path)
     model.save_weights(checkpoint_path)
-    costs.append(costs_epoch)
-costs = np.array(costs)
-np.save('costs.npy', costs)
+    training_costs.append(costs_epoch)
+    # Test
+    costs_epoch = []
+    for iteration, savenum in enumerate(snapshots_test):
+        # Load adjascent outputs
+        inputs_0, labels_0 = load_data(savenum)
+        #inputs_1, labels_1 = load_data(savenum+1)
+        with tf.device(device):
+            # Combine inputs to predict later output
+            #tf_inputs = [tf.cast(inputs_0, datatype), tf.cast(inputs_1, datatype)]
+            #tf_labels = tf.cast(labels_1, datatype)
+            tf_inputs = [tf.cast(inputs_0, datatype)]
+            tf_labels = tf.cast(labels_0, datatype)
+            tf_outputs = model.call(tf_inputs)
+            cost = cost_function(tf_inputs, tf_outputs, tf_labels)
+        # Status and output
+        costs_epoch.append(cost.numpy())
+        print('epoch.iter.save: %i.%i.%i, testing cost: %.3e' %(epoch, iteration, savenum, cost.numpy()), flush=True)
+    testing_costs.append(costs_epoch)
+training_costs = np.array(training_costs)
+testing_costs = np.array(testing_costs)
+np.save('training_costs.npy', training_costs)
+np.save('testing_costs.npy', testing_costs)

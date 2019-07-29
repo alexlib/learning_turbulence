@@ -126,6 +126,9 @@ class Unet(tf.keras.Model):
         """
         super().__init__()
 
+        # Filter multiplier
+        fmult = 2
+
         # Handle integer kernel specifications
         if isinstance(kernel_size, int):
             kernel_size = (kernel_size,) * 3
@@ -134,15 +137,15 @@ class Unet(tf.keras.Model):
         if kernel_center is None:
             kernel_center = tuple(ks//2 for ks in kernel_size)
 
-        def stack_down(stacksize):
+        def stack_down(stacksize, filters):
             """Build convolution stack with downsampling on the last."""
             stack = []
             for i in range(stacksize - 1):
                 stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, **kw))
-            stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, strides=strides, **kw))
+            stack.append(PeriodicConv3D(filters*fmult, kernel_size, kernel_center, strides=strides, **kw))
             return stack
 
-        def stack_up(stacksize):
+        def stack_up(stacksize, filters):
             """Build convolution stack with upsampling on the first."""
             stack = []
             stack.append(PeriodicConv3DTranspose(filters, kernel_size, kernel_center, strides=strides, **kw))
@@ -150,8 +153,8 @@ class Unet(tf.keras.Model):
                 stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, **kw))
             return stack
 
-        self.down_stacks = [stack_down(stack_width) for i in range(stacks)]
-        self.up_stacks = [stack_up(stack_width) for i in range(stacks)]
+        self.down_stacks = [stack_down(stack_width, filters*fmult**i) for i in range(stacks)]
+        self.up_stacks = [stack_up(stack_width, filters*fmult**i) for i in reversed(range(stacks))]
         self.outlayer = PeriodicConv3D(output_channels, (1, 1, 1), (0, 0, 0), **kw)
 
     def call(self, x_list):
