@@ -6,7 +6,7 @@ import tensorflow as tf
 import unet
 import time
 tf.enable_eager_execution()
-from training_parameters import *
+from parameters import *
 
 
 # Divide training data
@@ -38,10 +38,17 @@ def load_data(savenum):
     return inputs, labels
 
 # Build network and optimizer
+tf.set_random_seed(tf_seed)
 model = unet.Unet(stacks, stack_width, filters, output_channels, activation=activation)
 optimizer = tf.train.AdamOptimizer(learning_rate)
-if RESTORE:
-    model.load_weights(checkpoint_path)
+checkpoint = tf.train.Checkpoint(optimizer=optimizer, net=model)
+if restore_epoch:
+    restore_path = f"{checkpoint_path}-{restore_epoch}"
+    checkpoint.restore(restore_path)#.assert_consumed()
+    print('Restored from {}'.format(restore_path))
+else:
+    print('Initializing from scratch.')
+initial_epoch = checkpoint.save_counter.numpy() + 1
 
 # Define cost function
 def array_of_tf_components(tf_tens):
@@ -94,10 +101,11 @@ def cost_function(inputs, outputs, labels):
 training_costs = []
 testing_costs = []
 #with tf.device(device):
-for epoch in range(epochs):
+for epoch in range(initial_epoch, initial_epoch + epochs):
     print(f"Beginning epoch {epoch}", flush=True)
     # Train
     costs_epoch = []
+    rand.seed(perm_seed + epoch)
     for iteration, savenum in enumerate(rand.permutation(snapshots_train)):
         # Load adjascent outputs
         inputs_0, labels_0 = load_data(savenum)
@@ -118,10 +126,8 @@ for epoch in range(epochs):
         # Status and output
         costs_epoch.append(cost.numpy())
         print('epoch.iter.save: %i.%i.%i, training cost: %.3e' %(epoch, iteration, savenum, cost.numpy()), flush=True)
-        if (iteration+1) % checkpoint_cadence == 0:
-            print("Saving weights.", flush=True)
-            model.save_weights(checkpoint_path)
-    model.save_weights(checkpoint_path)
+    print("Saving weights.", flush=True)
+    checkpoint.save(checkpoint_path)
     training_costs.append(costs_epoch)
     # Test
     costs_epoch = []

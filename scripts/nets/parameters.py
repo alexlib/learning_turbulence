@@ -12,15 +12,15 @@ output_channels = 6
 activation = 'relu'
 
 # Training parameters
-RESTORE = False
-epochs = 2
-snapshots = 20
-perm_seed = 978
-testing_size = 2
+restore_epoch = 0
+epochs = 10
+snapshots = 2000
+testing_size = 200
 training_size = snapshots - testing_size
-learning_rate = 1e-6
+perm_seed = 978
+tf_seed = 718
+learning_rate = 1e-3
 checkpoint_path = "checkpoints/unet"
-checkpoint_cadence = 1
 diss_cost = 0
-#device = "/device:GPU:0"
-device = "/cpu:0"
+device = "/device:GPU:0"
+#device = "/cpu:0"
