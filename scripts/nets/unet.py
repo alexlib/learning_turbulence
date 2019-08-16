@@ -102,7 +102,7 @@ class PeriodicConv3DTranspose(tf.keras.Model):
 
 class Unet(tf.keras.Model):
 
-    def __init__(self, stacks, stack_width, filters, output_channels, kernel_size=(3,3,3), kernel_center=None, strides=(2,2,2), **kw):
+    def __init__(self, stacks, stackwidth, filters, output_channels, kernel_size=(3,3,3), kernel_center=None, strides=(2,2,2), dilation=2, **kw):
         """
         Parameters
         ----------
@@ -120,14 +120,13 @@ class Unet(tf.keras.Model):
             Kernel center for each dimension, default: kernel_size//2
         strides : tuple of ints
             Strides for each dimension, default: (2,2,2)
+        dilation: int
+            Multiplicative increase to filter size per stack depth
 
         Other keyword arguments are passed to the convolution layers.
 
         """
         super().__init__()
-
-        # Filter multiplier
-        fmult = 2
 
         # Handle integer kernel specifications
         if isinstance(kernel_size, int):
@@ -137,56 +136,82 @@ class Unet(tf.keras.Model):
         if kernel_center is None:
             kernel_center = tuple(ks//2 for ks in kernel_size)
 
-        def stack_down(stacksize, filters):
-            """Build convolution stack with downsampling on the last."""
-            stack = []
-            for i in range(stacksize - 1):
-                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, **kw))
-            stack.append(PeriodicConv3D(filters*fmult, kernel_size, kernel_center, strides=strides, **kw))
-            return stack
+        # Save attributes
+        self.stacks = stacks
+        self.stackwidth = stackwidth
+        self.filters = filters
+        self.output_channels = output_channels
+        self.kernel_size = kernel_size
+        self.kernel_center = kernel_center
+        self.strides = strides
+        self.dilation = dilation
+        self.conv_kw = kw
 
-        def stack_up(stacksize, filters):
-            """Build convolution stack with upsampling on the first."""
+        # Downward stacks, downsampling at the beginning of each except the first
+        self.down_stacks = []
+        for i in range(stacks):
             stack = []
-            stack.append(PeriodicConv3DTranspose(filters, kernel_size, kernel_center, strides=strides, **kw))
-            for i in range(stacksize - 1):
-                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, **kw))
-            return stack
+            stack_filters = filters * dilation**i
+            # Downsampling
+            if i != 0:
+                stack.append(PeriodicConv3D(stack_filters, kernel_size, kernel_center, strides=strides, **kw))
+            # Convolutions
+            for j in range(stackwidth):
+                stack.append(PeriodicConv3D(stack_filters, kernel_size, kernel_center, **kw))
+            self.down_stacks.append(stack)
 
-        self.down_stacks = [stack_down(stack_width, filters*fmult**i) for i in range(stacks)]
-        self.up_stacks = [stack_up(stack_width, filters*fmult**i) for i in reversed(range(stacks))]
-        # Output layer: linear recombinatino with no rectification
+        # Upward stacks, upsampling at the end of each except the last
+        self.up_stacks = []
+        for i in reversed(range(stacks)):
+            stack = []
+            stack_filters = filters * dilation**i
+            # Convolutions
+            for j in range(stackwidth):
+                stack.append(PeriodicConv3D(stack_filters, kernel_size, kernel_center, **kw))
+            # Upsampling
+            if i != 0:
+                stack.append(PeriodicConv3DTranspose(stack_filters//dilation, kernel_size, kernel_center, strides=strides, **kw))
+            self.up_stacks.append(stack)
+
+        # Output layer: linear recombination with no rectification
         self.outlayer = PeriodicConv3D(output_channels, (1, 1, 1), (0, 0, 0), activation=None)
 
     def call(self, x_list):
         """Call unet on multiple inputs, combining at bottom."""
 
         def eval_down(x):
-            """Evaluate down unet stacks, saving partials before each downsampling."""
+            """Evaluate down unet stacks, saving partials."""
             partials = []
             for stack in self.down_stacks:
-                for layer in stack[:-1]:
+                # Apply stack
+                for layer in stack:
                     x = layer(x)
+                # Save partials
                 partials.append(x)
-                x = stack[-1](x)
-            return x, partials
+            return partials
 
-        def eval_up(x, partials):
-            """Evaluate up unet stacks, concatenating partials after each upsampling."""
+        def eval_up(partials):
+            """Evaluate up unet stacks, concatenating partials."""
+            x = None
             for stack in self.up_stacks:
-                x = stack[0](x)
-                x = tf.concat([x, partials.pop()], axis=4)
-                for layer in stack[1:]:
+                if x is None:
+                    # Start with last partial
+                    x = partials.pop()
+                else:
+                    # Concatenate partial
+                    x = tf.concat([x, partials.pop()], axis=4)
+                # Apply stack
+                for layer in stack:
                     x = layer(x)
             return x
 
         # Evaluate down for each input
-        x, partials = zip(*[eval_down(x) for x in x_list])
-        # Concatenate results and partials for each input
-        x = tf.concat(x, axis=4)
+        partials = [eval_down(x) for x in x_list]
+        # Concatenate partials for each input
         partials = list(zip(*partials))
         partials = [tf.concat(p, axis=4) for p in partials]
         # Evaluate up
-        x = eval_up(x, partials)
+        x = eval_up(partials)
+        # Apply output layer
         return self.outlayer(x)
 
