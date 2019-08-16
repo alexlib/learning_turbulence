@@ -155,7 +155,8 @@ class Unet(tf.keras.Model):
 
         self.down_stacks = [stack_down(stack_width, filters*fmult**i) for i in range(stacks)]
         self.up_stacks = [stack_up(stack_width, filters*fmult**i) for i in reversed(range(stacks))]
-        self.outlayer = PeriodicConv3D(output_channels, (1, 1, 1), (0, 0, 0), **kw)
+        # Output layer: linear recombinatino with no rectification
+        self.outlayer = PeriodicConv3D(output_channels, (1, 1, 1), (0, 0, 0), activation=None)
 
     def call(self, x_list):
         """Call unet on multiple inputs, combining at bottom."""
