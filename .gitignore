@@ -1,0 +1,7 @@
+*__pycache__
+*.nc
+*.h5
+*.npy
+*.npz
+*.DS_Store
+checkpoints/

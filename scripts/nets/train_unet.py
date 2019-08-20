@@ -39,7 +39,7 @@ def load_data(savenum):
 
 # Build network and optimizer
 tf.set_random_seed(tf_seed)
-model = unet.Unet(stacks, stack_width, filters, output_channels, kernel_size=kernel_size, **conv_kw)
+model = unet.Unet(stacks, stack_width, filters_base, output_channels, **unet_kw)
 optimizer = tf.train.AdamOptimizer(learning_rate)
 checkpoint = tf.train.Checkpoint(optimizer=optimizer, net=model)
 if restore_epoch:

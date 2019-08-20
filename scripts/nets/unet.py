@@ -116,7 +116,7 @@ class PeriodicConv3DTranspose(tf.keras.Model):
 
 class Unet(tf.keras.Model):
 
-    def __init__(self, stacks, stackwidth, filters, output_channels, kernel_size=(3,3,3), kernel_center=None, strides=(2,2,2), dilation=2, **kw):
+    def __init__(self, stacks, stackwidth, filters_base, output_channels, kernel_size=(3,3,3), kernel_center=None, strides=(2,2,2), filters_mult=2, **kw):
         """
         Parameters
         ----------
@@ -124,8 +124,8 @@ class Unet(tf.keras.Model):
             Number of unet stacks.
         stackwidth : int
             Number of convolutions per stack.
-        filters : int
-            Number of intermediate convolution filters.
+        filters_base : int
+            Base number of intermediate convolution filters.
         output_channels : int
             Number of output channels
         kernel_size : int or tuple of ints
@@ -134,7 +134,7 @@ class Unet(tf.keras.Model):
             Kernel center for each dimension, default: kernel_size//2
         strides : tuple of ints
             Strides for each dimension, default: (2,2,2)
-        dilation: int
+        filters_mult: int
             Multiplicative increase to filter size per stack depth
 
         Other keyword arguments are passed to the convolution layers.
@@ -153,38 +153,38 @@ class Unet(tf.keras.Model):
         # Save attributes
         self.stacks = stacks
         self.stackwidth = stackwidth
-        self.filters = filters
+        self.filters_base = filters_base
         self.output_channels = output_channels
         self.kernel_size = kernel_size
         self.kernel_center = kernel_center
         self.strides = strides
-        self.dilation = dilation
+        self.filters_mult = filters_mult
         self.conv_kw = kw
 
         # Downward stacks, downsampling at the beginning of each except the first
         self.down_stacks = []
         for i in range(stacks):
             stack = []
-            stack_filters = filters * dilation**i
+            filters = filters_base * filters_mult**i
             # Downsampling
             if i != 0:
-                stack.append(PeriodicConv3D(stack_filters, kernel_size, kernel_center, strides=strides, **kw))
+                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, strides=strides, **kw))
             # Convolutions
             for j in range(stackwidth):
-                stack.append(PeriodicConv3D(stack_filters, kernel_size, kernel_center, **kw))
+                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, **kw))
             self.down_stacks.append(stack)
 
         # Upward stacks, upsampling at the end of each except the last
         self.up_stacks = []
         for i in reversed(range(stacks)):
             stack = []
-            stack_filters = filters * dilation**i
+            filters = filters_base * filters_mult**i
             # Convolutions
             for j in range(stackwidth):
-                stack.append(PeriodicConv3D(stack_filters, kernel_size, kernel_center, **kw))
+                stack.append(PeriodicConv3D(filters, kernel_size, kernel_center, **kw))
             # Upsampling
             if i != 0:
-                stack.append(PeriodicConv3DTranspose(stack_filters//dilation, kernel_size, kernel_center, strides=strides, **kw))
+                stack.append(PeriodicConv3DTranspose(filters//filters_mult, kernel_size, kernel_center, strides=strides, **kw))
             self.up_stacks.append(stack)
 
         # Output layer: linear recombination with no rectification
