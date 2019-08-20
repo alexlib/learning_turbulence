@@ -43,18 +43,21 @@ def compress_axis_periodic(tensor, axis, pad_left, pad_right):
 class PeriodicConv3D(tf.keras.Model):
     """3D convolution layer with periodic padding."""
 
-    def __init__(self, filters, kernel_size, kernel_center, strides=(1,1,1), **kw):
+    def __init__(self, filters, kernel_size, kernel_center, strides=(1,1,1), batch_norm=False, **kw):
         super().__init__()
         # Store inputs
         self.filters = filters
         self.kernel_size = kernel_size
         self.kernel_center = kernel_center
         self.strides = strides
+        self.batch_norm = batch_norm
         # Calculate pads
         self.pad_left = kernel_center
         self.pad_right = [ks - kc - 1 for ks, kc in zip(kernel_size, kernel_center)]
-        # Build valid convolution
+        # Build layers
         self.conv_valid = tf.keras.layers.Conv3D(filters, kernel_size, strides=strides, padding='valid', **kw)
+        if batch_norm:
+            self.batch_norm_layer = tf.keras.layers.BatchNormalization()
 
     def check_input_shape(self, input_shape):
         # Check strides evenly divide data shape
@@ -70,24 +73,32 @@ class PeriodicConv3D(tf.keras.Model):
         for axis in range(3):
             x = pad_axis_periodic(x, axis+1, self.pad_left[axis], self.pad_right[axis])
         # Apply valid convolution
-        return self.conv_valid(x)
+        x = self.conv_valid(x)
+        # Batch normalization
+        if self.batch_norm:
+            x = self.batch_norm_layer(x)
+        return x
 
 
 class PeriodicConv3DTranspose(tf.keras.Model):
     """3D transposed convolution layer with periodic padding."""
 
-    def __init__(self, filters, kernel_size, kernel_center, strides=(1, 1, 1), **kw):
+    def __init__(self, filters, kernel_size, kernel_center, strides=(1, 1, 1), batch_norm=False, **kw):
         super().__init__()
         # Store inputs
         self.filters = filters
         self.kernel_size = kernel_size
         self.kernel_center = kernel_center
         self.strides = strides
+        self.batch_norm = batch_norm
         # Calculate pads
         self.pad_left = kernel_center
         self.pad_right = [ks - kc - 1 for ks, kc in zip(kernel_size, kernel_center)]
         self.output_padding = [[0, 0]] + [[0, min(ks, s) - 1] for ks, s in zip(kernel_size, strides)] + [[0, 0]]
+        # Build layers
         self.conv_valid = tf.keras.layers.Conv3DTranspose(filters, kernel_size, strides=strides, padding='valid', **kw)
+        if batch_norm:
+            self.batch_norm_layer = tf.keras.layers.BatchNormalization()
 
     def __call__(self, x):
         # Apply valid convolution
@@ -97,6 +108,9 @@ class PeriodicConv3DTranspose(tf.keras.Model):
         # Additively compress periodic padding, skipping first axis (batch)
         for axis in range(3):
             x = compress_axis_periodic(x, axis+1, self.pad_left[axis], self.pad_right[axis])
+        # Batch normalization
+        if self.batch_norm:
+            x = self.batch_norm_layer(x)
         return x
 
 
