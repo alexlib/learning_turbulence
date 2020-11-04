@@ -15,6 +15,7 @@ def incomp_shell_2d(kf, kfw, dkx, dky, seed=None):
         # Forcing amplitude with random phase
         phase = 2 * np.pi * rand.rand(*k.shape)
         f_amp = (E_k2 * dkx * dky)**0.5 * np.exp(1j*phase)
+        f_amp *= rand.randn(*k.shape)
         # Forcing components: divergence free
         fx = ky * f_amp / (k + (k==0))
         fy = - kx * f_amp / (k + (k==0))

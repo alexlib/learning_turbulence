@@ -37,7 +37,7 @@ k = (kx**2 + ky**2)**0.5
 
 kmax = int(np.ceil(np.max(k)))
 bins = np.arange(1, kmax+1, 2)
-centers = bins[:-1] + np.diff(bins)/2
+kcen = bins[:-1] + np.diff(bins)/2
 hist_samples, _ = np.histogram(k, bins=bins)
 
 
@@ -64,8 +64,10 @@ def main(filename, start, count, output):
             # Plot histogram
             pow_samples, _ = np.histogram(k, bins=bins, weights=E_k1)
             spectrum = pow_samples / hist_samples
-            plt.loglog(centers, spectrum, '.-')
-            plt.ylim([1e-18, 1e0])
+            plt.loglog(kcen, param.ε**(2/3)*kcen**(-5/3), '--k')
+            plt.loglog(kcen, param.η**(2/3)*kcen**(-3), '--k')
+            plt.loglog(kcen, spectrum, '.-')
+            plt.ylim([1e-12, 1e0])
             plt.xlabel("k")
             plt.ylabel("E(k)")
             # Add time title

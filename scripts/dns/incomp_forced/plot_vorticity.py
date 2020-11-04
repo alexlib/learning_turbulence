@@ -5,7 +5,7 @@ Usage:
     plot_slices.py <files>... [--output=<dir>]
 
 Options:
-    --output=<dir>  Output directory [default: ./frames]
+    --output=<dir>  Output directory [default: ./frames_vorticity]
 
 """
 
@@ -22,13 +22,13 @@ def main(filename, start, count, output):
     """Save plot of specified tasks for given range of analysis writes."""
 
     # Plot settings
-    tasks = ['ux', 'uy', 'ω', 'e']
+    tasks = ['ω']
     scale = 2
-    dpi = 100
+    dpi = 200
     title_func = lambda sim_time: 't = {:.3f}'.format(sim_time)
     savename_func = lambda write: 'write_{:06}.png'.format(write)
     # Layout
-    nrows, ncols = 2, 2
+    nrows, ncols = 1, 1
     image = plot_tools.Box(2, 2)
     pad = plot_tools.Frame(0.2, 0.2, 0.1, 0.1)
     margin = plot_tools.Frame(0.3, 0.2, 0.1, 0.1)

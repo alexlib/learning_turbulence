@@ -4,7 +4,7 @@ import numpy as np
 
 # Domain
 L = 2 * np.pi
-N = 2048
+N = 4096
 mesh = None
 
 # Stochastic forcing
@@ -27,9 +27,9 @@ lν = lν_kmax / kmax
 # Temporal parameters
 dx = L / N
 Uα = ε**(1/3) * lα**(1/3)
-safety = 1/16
+safety = 0.5
 dt = safety * dx / Uα
-ts = "RK111"
+ts = "RK443"
 stop_sim_time = np.inf
 stop_wall_time = np.inf
 scalars_iter = 10
