@@ -6,7 +6,7 @@ import pathlib
 
 from dedalus import public as de
 from dedalus.extras import flow_tools
-import parameters as param
+import param_dns as param
 import forcing
 
 import logging
