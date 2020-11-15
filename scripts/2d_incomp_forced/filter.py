@@ -29,16 +29,28 @@ class Convolve(Operator, FutureField):
         np.multiply(arg0.data, arg1.data, out=out.data)
 
 
-def build_filter(domain, N):
-    """Build sharp spectral filter field."""
+def build_sharp_filter(domain, N, norm=2):
+    """Build sharp filter operator."""
     kmax = (N - 1) // 2
+    kn = domain.all_elements()
+    kn = np.meshgrid(*[ki.ravel() for ki in kn], indexing='ij')
+    knorm = np.linalg.norm(kn, axis=0, ord=norm)
     eta = domain.new_field(name='eta')
-    kx = domain.elements(0)
-    ky = domain.elements(1)
-    kz = domain.elements(2)
     eta['c'] = 1
-    eta['c'] *= np.abs(kx) <= kmax
-    eta['c'] *= np.abs(ky) <= kmax
-    eta['c'] *= np.abs(kz) <= kmax
+    eta['c'][knorm > kmax] = 0
     Filter = lambda field, eta=eta: Convolve(eta, field)
     return Filter
+
+
+def build_gaussian_filter(domain, N, epsilon, norm=2):
+    """Build gaussian filter operator."""
+    kcut = (N - 1) // 2
+    kn = domain.all_elements()
+    kn = np.meshgrid(*[ki.ravel() for ki in kn], indexing='ij')
+    knorm = np.linalg.norm(kn, axis=0, ord=norm)
+    eta = domain.new_field(name='eta')
+    eta['c'] = np.exp(np.log(epsilon) * (knorm / kcut)**2)
+    Filter = lambda field, eta=eta: Convolve(eta, field)
+    return Filter
+
+

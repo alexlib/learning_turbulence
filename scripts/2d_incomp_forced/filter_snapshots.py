@@ -13,7 +13,7 @@ Options:
 
 import h5py
 import post as post_tools
-import filter
+import filter_functions
 import xarray
 import numpy as np
 import parameters as params
@@ -27,10 +27,9 @@ def field_to_xarray(field, layout='g'):
     coords = []
     for axis in range(domain.dim):
         basis = domain.bases[axis]
-        meta = field.meta[basis.name]
         if layout.grid_space[axis]:
             label = basis.name
-            scale = basis.grid(meta['scale'])
+            scale = basis.grid(field.scales[axis])
         else:
             label = basis.element_name
             scale = basis.elements
@@ -47,40 +46,49 @@ def save_subgrid_fields(filename, N, comm, output_path):
     domain = post_tools.build_domain(params, comm=comm)
     ux = post_tools.load_field(filename, domain, 'ux', 0)
     uy = post_tools.load_field(filename, domain, 'uy', 0)
-    uz = post_tools.load_field(filename, domain, 'uz', 0)
+    print('Done loading fields')
     # Filter velocities
-    filt = filter.build_filter(domain, N)
+    filt = filter_functions.build_gaussian_filter(domain, N, params.epsilon)
     out['ux'] = filt_ux = filt(ux).evaluate()
     out['uy'] = filt_uy = filt(uy).evaluate()
-    out['uz'] = filt_uz = filt(uz).evaluate()
+    print('Done filtering fields')
+
+    #dx = domain.bases[0].Differentiate
+    #dy = domain.bases[1].Differentiate
+
+    # Compute vorticity and magnitude of vorticity gradient
+    #out['wz'] = wz = (dx(filt_uy) - dy(filt_ux)).evaluate()
+    #out['grad_w_norm'] = np.sqrt(dx(wz)**2 + dy(wz)**2).evaluate()
+    
     # Compute resolved strain components
-    dx = domain.bases[0].Differentiate
-    dy = domain.bases[1].Differentiate
-    dz = domain.bases[2].Differentiate
-    out['Sxx'] = Sxx = dx(filt_ux).evaluate()
-    out['Syy'] = Syy = dy(filt_uy).evaluate()
-    out['Szz'] = Szz = dz(filt_uz).evaluate()
-    out['Sxy'] = Sxy = Syx = (0.5*(dx(filt_uy) + dy(filt_ux))).evaluate()
-    out['Syz'] = Syz = Szy = (0.5*(dy(filt_uz) + dz(filt_uy))).evaluate()
-    out['Szx'] = Szx = Sxz = (0.5*(dz(filt_ux) + dx(filt_uz))).evaluate()
-    out['S_norm'] = np.sqrt(Sxx*Sxx + Sxy*Sxy + Sxz*Sxz + Syx*Syx + Syy*Syy + Syz*Syz + Szx*Szx + Szy*Szy + Szz*Szz).evaluate()
-    # Compute subgrid stress components
-    out['txx'] = txx = filt(filt_ux*filt_ux - ux*ux).evaluate()
-    out['tyy'] = tyy = filt(filt_uy*filt_uy - uy*uy).evaluate()
-    out['tzz'] = tzz = filt(filt_uz*filt_uz - uz*uz).evaluate()
-    out['txy'] = txy = tyx = filt(filt_ux*filt_uy - ux*uy).evaluate()
-    out['tyz'] = tyz = tzy = filt(filt_uy*filt_uz - uy*uz).evaluate()
-    out['tzx'] = tzx = txz = filt(filt_uz*filt_ux - uz*ux).evaluate()
+    #out['Sxx'] = Sxx = dx(filt_ux).evaluate()
+    #out['Syy'] = Syy = dy(filt_uy).evaluate()
+    #out['Sxy'] = Sxy = Syx = (0.5*(dx(filt_uy) + dy(filt_ux))).evaluate()
+
+    #out['S_norm'] = np.sqrt(Sxx*Sxx + Sxy*Sxy + Syx*Syx + Syy*Syy).evaluate()
+    
+    # Compute explicit subgrid stress components
+    out['im_txx'] = txx = filt(filt_ux*filt_ux - ux*ux).evaluate()
+    out['im_tyy'] = tyy = filt(filt_uy*filt_uy - uy*uy).evaluate()
+    out['im_txy'] = txy = tyx = filt(filt_ux*filt_uy - ux*uy).evaluate()
+
+    # Compute implicit subgrid stress components
+    out['ex_txx'] = txx = (filt_ux*filt_ux - filt(ux*ux)).evaluate()
+    out['ex_tyy'] = tyy = (filt_uy*filt_uy - filt(uy*uy)).evaluate()
+    out['ex_txy'] = txy = tyx = (filt_ux*filt_uy - filt(ux*uy)).evaluate()
+    print('Done computing stresses')
+
     # Compute subgrid force components
-    out['fx'] = (dx(txx) + dy(tyx) + dz(tzx)).evaluate()
-    out['fy'] = (dx(txy) + dy(tyy) + dz(tzy)).evaluate()
-    out['fz'] = (dx(txz) + dy(tyz) + dz(tzz)).evaluate()
+    #out['fx'] = fx = (dx(txx) + dy(tyx)).evaluate()
+    #out['fy'] = fy = (dx(txy) + dy(tyy)).evaluate()
+
     # Save all outputs
     for key in out:
         field = out[key]
         field.require_coeff_space()
         field.set_scales(N / params.N)
         out[key] = field_to_xarray(field, layout='g')
+    print('Done converting to xarray')
     ds = xarray.Dataset(out)
     input_path = pathlib.Path(filename)
     output_filename = output_path.joinpath(input_path.stem).with_suffix('.nc')
