@@ -33,11 +33,11 @@ def save_subgrid_fields(filename, N_filt, epsilon, comm, output_path):
     out['ux'] = F_ux = F(ux).evaluate()
     out['uy'] = F_uy = F(uy).evaluate()
     print('Done filtering fields')
-    # Compute implicit subgrid stress components
+    # Compute implicitly filtered subgrid stress components
     out['im_txx'] = (F(ux*ux) - F_ux*F_ux).evaluate()
     out['im_tyy'] = (F(uy*uy) - F_uy*F_uy).evaluate()
     out['im_txy'] = (F(ux*uy) - F_ux*F_uy).evaluate()
-    # Compute explicit subgrid stress components
+    # Compute explicitly filtered subgrid stress components
     out['ex_txx'] = (F(ux*ux) - F(F_ux*F_ux)).evaluate()
     out['ex_tyy'] = (F(uy*uy) - F(F_uy*F_uy)).evaluate()
     out['ex_txy'] = (F(ux*uy) - F(F_ux*F_uy)).evaluate()
@@ -83,6 +83,8 @@ if __name__ == "__main__":
         comm = MPI.COMM_SELF
         files = args['<files>'][rank::size]
     # Run
+    N_filt = int(args['<N_filt>'])
+    epsilon = 10**(-float(args['<mlog10_ep>']))
     for file in files:
-        save_subgrid_fields(file, int(args['<N_filt>']), float(args['<mlog10_ep>']), comm, output_path)
+        save_subgrid_fields(file, N_filt, epsilon, comm, output_path)
 
